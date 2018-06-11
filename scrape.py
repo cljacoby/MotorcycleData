@@ -1,4 +1,15 @@
-""" https://medium.com/the-andela-way/introduction-to-web-scraping-using-selenium-7ec377a8cf72 """
+"""
+Adapted from:
+https://medium.com/the-andela-way/introduction-to-web-scraping-using-selenium-7ec377a8cf72
+
+
+Remaining Items:
+----------------
+TODO: Implement recursive function rather than the stacked loops. Include the XPATHS
+	in the 'selects' data strucutre fed to recursion so the selenium instances can be constructed
+	in the recursion. Also avoid setting all those different varialbes.
+
+"""
 
 
 from selenium.webdriver import chrome
