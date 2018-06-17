@@ -1,2 +1,2 @@
 .\Scripts\pip install -r .\requirements.txt
-.\Scripts\ipython -i .\scrape.py
+.\Scripts\ipython --pdb .\scrape.py
