@@ -5,9 +5,10 @@ https://medium.com/the-andela-way/introduction-to-web-scraping-using-selenium-7e
 
 Remaining Items:
 ----------------
-TODO: Possibly revise recusion to not keep all solutions in memory at once.
-Also, write solutions as they are generated rather than at the end. Also maybe 
-use an actual generator.
+TODO: Handle website crash/disconnect errors. Basically. Get the last entry before
+failure, then start bcack up after that.
+TODO: Switch to databse intermediary rather than trying to write straight to a flat
+file.
 """
 
 
@@ -21,11 +22,12 @@ from time import sleep
 from random import random
 import copy
 import json
+import sqlite3
 ###
 import ipdb
 
 
-def sleep_random(mini, maxi):
+def sleep_rand_interval(mini, maxi):
 	"""
 	: Sleep for a random duraction on an interval. Arguments mini and maxi
 	: are specified in seconds.
@@ -45,64 +47,60 @@ class element_is_enabled(object):
 		self.locator = locator
 
 	def __call__(self, driver):
-		sleep_random(0.25, 1.0)
+		sleep_rand_interval(.25, .25)
 		element = driver.find_element(*self.locator)
 		return element.is_enabled()
 
 
-def get_combos(browser, selects, out_path=None, verbose=False):
+def get_valid_options(options, bad_values, start_val=None):
 	"""
-	: Recursive method to generate combinations from a series of select bars.
+	: Get valid options from a selenium select instance's options list. Filters
+	: out bad_values. Also cuts first element from every options list, which is always
+	: a filler value. If start_val is passed, reduces options to those past the
+	: start_val (not inclusiv). Useful for resuming a process that previously failed
+	: intermittently.
 	"""
-
-	if out_path:
-		out_file = open(out_path, 'w')
-	solutions = [] 
-	
-	def add_solution(solution):
-		if verbose:
-			print(solution)
-		if out_path:
-			out_file.write(json.dumps(solution, indent=2) + ',')
-		solutions.append(solution)
-
-	def get_combos_helper(index, prefix):
-		if index > len(selects) - 1:
-			add_solution(prefix)
-			return
-		xpath = selects[index][1]
-		select_element = browser.find_element_by_xpath(xpath)
-		select = Select(select_element)
-		# Get all valid options. Exclude first value (filler) and any "--" entries.
-		options = list(filter(lambda opt: opt.text != "--", select.options[1:]))
-		if len(options) == 0:
-			add_solution(prefix)
-			return
-		for option in options:
-			select.select_by_visible_text(option.text)
-			wait.until(element_is_enabled((By.XPATH, xpath)))
-			new_prefix = copy.deepcopy(prefix)
-			# Add entry for this selects attribute keyed to value. Ex. d['year'] = '1984'
-			new_prefix[selects[index][0]] = option.text
-			get_combos_helper(index + 1, new_prefix)
-	get_combos_helper(0, {})
-
-	if out_path:
-		### Change later
-		with open('motorcycles_.json', 'w') as out_file_:
-			json.dump(out_file_, solutions, indent=2)
-	
-	try:
-		out_file.close()
-	except:
-		pass
-	return solutions
-
-	
+	valid_options = []
+	start = False if start_val else True
+	for opt in options:
+		if start and opt.text not in bad_values:
+			valid_options.append(opt)
+		if opt.text == start_val:
+			start = True
+	return valid_options
 
 
-if __name__ == "__main__":
-	
+
+def get_combos(browser, selects_struct, index, prefix):
+	"""
+	: Generate all combinations of the select bars defined in selects_struct.
+	: Operates via a recursive generator, so combos are delivered one at a time as
+	: dictionaries.
+	"""
+	if index > len(selects_struct) - 1:
+		yield prefix
+		return
+	# Construct selenium Select UI helper from the xpath
+	xpath = selects_struct[index]['xpath']
+	select_element = browser.find_element_by_xpath(xpath)
+	select = Select(select_element)
+	# Get all valid options. Exclude first value, which is a filler.
+	start_val = selects_struct[index]['start'] if 'start' in selects_struct[index] else None  
+	options = get_valid_options(select.options[1:], bad_values=['--'], start_val=start_val)
+	if len(options) == 0:
+		yield prefix
+		return
+	for option in options:
+		select.select_by_visible_text(option.text)
+		wait.until(element_is_enabled((By.XPATH, xpath)))
+		new_prefix = copy.deepcopy(prefix)
+		# Add entry for this selects_struct attribute, keyed to the value. Ex. d['year'] = '1984'
+		new_prefix[selects_struct[index]['attr']] = option.text
+		for combo in get_combos(browser, selects_struct, index + 1, new_prefix):
+			yield combo
+
+
+def setup_browser():
 	# Define browser options
 	option = chrome.webdriver.Options()
 	option.add_argument("— incognito")
@@ -112,7 +110,7 @@ if __name__ == "__main__":
 		executable_path = "C:/users/cjacoby/chromedriver/chromedriver.exe",
 		chrome_options = option)
 
-	# Setup browser wait mechanism, with 20 second timeout limit
+	# Setup browser wait instance, with timeout limit
 	timeout = 20
 	wait = WebDriverWait(browser, timeout)
 
@@ -121,31 +119,37 @@ if __name__ == "__main__":
 
 	# Test if the page loaded
 	try:
-		wait.until(
-			EC.visibility_of_element_located(
-				(By.XPATH, "//html")
-			)
-		)
+		wait.until(EC.visibility_of_element_located((By.XPATH, "//html")))
+		return browser, wait
 	except TimeoutException:
 		print("Timed out waiting for initial page load")
 		browser.quit()
 		sys.exit(1)
 
+
+
+
+if __name__ == "__main__":
+
+	# Get a prepared browser instance
+	browser, wait = setup_browser()
+
 	# Click the button for motorcycles tab
 	motorcycles_tab = browser.find_element_by_id("w5-w0-0-MOTORCYCLE-tab")
 	motorcycles_tab.click()
 
-	# Data structure fed to recursion
+	# Select bar data structure fed to recursion
 	select_container_xpath = '//form[@id="w5-w0-MOTORCYCLE-tabpanel"]/section/div'
-	selects = [
-		('year', select_container_xpath + "/span[1]/select"),
-		('make', select_container_xpath + "/span[2]/select"),
-		('model',  select_container_xpath + "/span[3]/select"),
-		('trim', select_container_xpath + "/span[4]/select")
+	selects_struct = [
+		{'attr': 'year', 'xpath': select_container_xpath + "/span[1]/select"},
+		{'attr': 'make', 'xpath': select_container_xpath + "/span[2]/select"},
+		{'attr': 'model', 'xpath':  select_container_xpath + "/span[3]/select"},
+		{'attr': 'trim', 'xpath': select_container_xpath + "/span[4]/select"}
 	]
 
 	# Wait until first select bar is enabled to start main recursion process
-	wait.until(element_is_enabled((By.XPATH, selects[0][1])))
+	wait.until(element_is_enabled((By.XPATH, selects_struct[0]['xpath'])))
 
-	# main recursion process
-	get_combos(browser, selects, out_path='motorcycles.json' ,verbose=True)
+	# main process
+	for combo in get_combos(browser, selects_struct, 0, {}):
+		print(combo)
