@@ -77,7 +77,7 @@ def get_valid_options(options, bad_values, start_val=None):
 	return valid_options
 
 
-def get_combos(browser, selects_struct, index, prefix):
+def get_combos(browser, wait, selects_struct, index, prefix):
 	"""
 	: Generate all combinations of the select bars defined in selects_struct.
 	: Operates via a recursive generator, so combos are returned one at a time as
@@ -107,14 +107,17 @@ def get_combos(browser, selects_struct, index, prefix):
 		new_prefix = copy.deepcopy(prefix)
 		# Add entry for this selects_struct attribute, keyed to the value. Ex. d['year'] = '1984'
 		new_prefix[selects_struct[index]['attr']] = option.text
-		for combo in get_combos(browser, selects_struct, index + 1, new_prefix):
+		for combo in get_combos(browser, wait, selects_struct, index + 1, new_prefix):
 			yield combo
 
 
 def setup_browser(timeout=20):
+	"""
+	: Setup and return a selenium browser instnace, and a WebDriverWait isntacne.
+	"""
 	# Define browser options
 	option = chrome.webdriver.Options()
-	option.add_argument("— incognito")
+	option.add_argument("—incognito")
 
 	# Instantiate browser
 	browser = chrome.webdriver.WebDriver(
@@ -138,6 +141,11 @@ def setup_browser(timeout=20):
 
 
 def main(start=None):
+	"""
+	: Main process. Access a series of UI select bars and generate all possible
+	: combinations. Combinations come off a generator, and can be handled one at
+	: at time in the for loop.
+	"""
 	# Get a prepared browser instance
 	timeout = 20
 	browser, wait = setup_browser(timeout)
@@ -165,7 +173,7 @@ def main(start=None):
 	wait.until(element_is_enabled((By.XPATH, selects_struct[0]['xpath'])))
 
 	# Main recursion.
-	for combo in get_combos(browser, selects_struct, 0, {}):
+	for combo in get_combos(browser, wait, selects_struct, 0, {}):
 		print(combo)
 
 
