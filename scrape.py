@@ -23,8 +23,15 @@ from random import random
 import copy
 import json
 import sqlite3
+import sys
 ###
 import ipdb
+
+
+class BrowserError(Exception):
+	def __init__(self, message=None, errors=None):
+		super().__init__(message)
+		self.errors = errors
 
 
 def sleep_rand_interval(mini, maxi):
@@ -63,19 +70,19 @@ def get_valid_options(options, bad_values, start_val=None):
 	valid_options = []
 	start = False if start_val else True
 	for opt in options:
-		if start and opt.text not in bad_values:
-			valid_options.append(opt)
 		if opt.text == start_val:
 			start = True
+		if start and opt.text not in bad_values:
+			valid_options.append(opt)
 	return valid_options
-
 
 
 def get_combos(browser, selects_struct, index, prefix):
 	"""
 	: Generate all combinations of the select bars defined in selects_struct.
-	: Operates via a recursive generator, so combos are delivered one at a time as
-	: dictionaries.
+	: Operates via a recursive generator, so combos are returned one at a time as
+	: dictionaries. If a select entry in selects_struct has a 'start' value, then
+	: limit the options to all values after the start value.
 	"""
 	if index > len(selects_struct) - 1:
 		yield prefix
@@ -84,8 +91,12 @@ def get_combos(browser, selects_struct, index, prefix):
 	xpath = selects_struct[index]['xpath']
 	select_element = browser.find_element_by_xpath(xpath)
 	select = Select(select_element)
-	# Get all valid options. Exclude first value, which is a filler.
-	start_val = selects_struct[index]['start'] if 'start' in selects_struct[index] else None  
+	start_val = None
+	if 'start' in selects_struct[index]:
+		start_val = selects_struct[index]['start']
+		# Start value only used at top frame.
+		del selects_struct[index]['start']
+	# Exclude first value, which is a filler.
 	options = get_valid_options(select.options[1:], bad_values=['--'], start_val=start_val)
 	if len(options) == 0:
 		yield prefix
@@ -100,7 +111,7 @@ def get_combos(browser, selects_struct, index, prefix):
 			yield combo
 
 
-def setup_browser():
+def setup_browser(timeout=20):
 	# Define browser options
 	option = chrome.webdriver.Options()
 	option.add_argument("— incognito")
@@ -111,7 +122,6 @@ def setup_browser():
 		chrome_options = option)
 
 	# Setup browser wait instance, with timeout limit
-	timeout = 20
 	wait = WebDriverWait(browser, timeout)
 
 	# Get page and check load success
@@ -127,12 +137,10 @@ def setup_browser():
 		sys.exit(1)
 
 
-
-
-if __name__ == "__main__":
-
+def main(start=None):
 	# Get a prepared browser instance
-	browser, wait = setup_browser()
+	timeout = 20
+	browser, wait = setup_browser(timeout)
 
 	# Click the button for motorcycles tab
 	motorcycles_tab = browser.find_element_by_id("w5-w0-0-MOTORCYCLE-tab")
@@ -147,9 +155,19 @@ if __name__ == "__main__":
 		{'attr': 'trim', 'xpath': select_container_xpath + "/span[4]/select"}
 	]
 
+	# Apply start values if present
+	if start:
+		for select in selects_struct:
+			if select['attr'] in start:
+				select['start'] = start[select['attr']]
+
 	# Wait until first select bar is enabled to start main recursion process
 	wait.until(element_is_enabled((By.XPATH, selects_struct[0]['xpath'])))
 
-	# main process
+	# Main recursion.
 	for combo in get_combos(browser, selects_struct, 0, {}):
 		print(combo)
+
+
+if __name__ == "__main__":
+	main()
