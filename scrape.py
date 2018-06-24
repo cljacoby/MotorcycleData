@@ -2,13 +2,12 @@
 Adapted from:
 https://medium.com/the-andela-way/introduction-to-web-scraping-using-selenium-7ec377a8cf72
 
-
-Remaining Items:
-----------------
-TODO: Handle website crash/disconnect errors. Basically. Get the last entry before
-failure, then start bcack up after that.
-TODO: Switch to databse intermediary rather than trying to write straight to a flat
-file.
+FUTR:
+	- Use a sql transaction builder rather than commit at every insert
+	- Possibly integrate sql insert and recursion. I think improves memory usage?
+		Would require passing database information down recursion stack frames.
+	- Test the error/restart functionality. Will it actually pickup where it left
+		off.
 """
 
 
@@ -57,6 +56,23 @@ class element_is_enabled(object):
 		sleep_rand_interval(.25, .25)
 		element = driver.find_element(*self.locator)
 		return element.is_enabled()
+
+
+def get_database_conn():
+	conn = sqlite3.connect('./motorcycles.sqlite')
+	cursor = conn.cursor()
+	creat_sql = \
+	'''
+		CREATE TABLE IF NOT EXISTS Motorcycles(
+			year INTERGER NOT NULL,
+			make TEXT NOT NULL,
+			model TEXT NOT NULL,
+			trim TEXT);
+	'''
+	# UNIQUE(year, make, model, trim) ON CONFLICT REPLACE
+	cursor.execute(creat_sql)
+	return conn
+
 
 
 def get_valid_options(options, bad_values, start_val=None):
@@ -147,8 +163,7 @@ def main(start=None):
 	: at time in the for loop.
 	"""
 	# Get a prepared browser instance
-	timeout = 20
-	browser, wait = setup_browser(timeout)
+	browser, wait = setup_browser(timeout=20)
 
 	# Click the button for motorcycles tab
 	motorcycles_tab = browser.find_element_by_id("w5-w0-0-MOTORCYCLE-tab")
@@ -172,10 +187,27 @@ def main(start=None):
 	# Wait until first select bar is enabled to start main recursion process
 	wait.until(element_is_enabled((By.XPATH, selects_struct[0]['xpath'])))
 
-	# Main recursion.
-	for combo in get_combos(browser, wait, selects_struct, 0, {}):
-		print(combo)
+	# init database
+	conn = get_database_conn()
+	cursor = conn.cursor()
+	query = cursor.execute("SELECT * FROM Motorcycles WHERE rowid=(SELECT MAX(rowid) FROM Motorcycles);")
+	start = query.fetchone()
+	ipdb.set_trace()
 
+	# Main recursion.
+	for c in get_combos(browser, wait, selects_struct, 0, {}):
+		print(c)
+		values = list(c.values())
+		if len(values) < 3:
+			continue
+		elif len(values) == 3:
+			values.append(None)
+		cursor.execute("INSERT INTO Motorcycles VALUES(?,?,?,?)", values)
+		conn.commit()
 
 if __name__ == "__main__":
-	main()
+	try:
+		main()
+	except:
+		ipdb.set_trace()
+		main()
