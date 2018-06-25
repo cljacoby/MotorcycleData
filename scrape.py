@@ -7,7 +7,7 @@ FUTR:
 	- Possibly integrate sql insert and recursion. I think improves memory usage?
 		Would require passing database information down recursion stack frames.
 	- Test the error/restart functionality. Will it actually pickup where it left
-		off.
+		off
 """
 
 
